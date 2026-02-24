@@ -435,7 +435,7 @@ config_19:
   lora_dims:
     attn_proj:   { r: 8, alpha: 2 }
     output_proj: { r: 8, alpha: 2 }
-    proj_out:    { r: 64, alpha: 32}
+    proj_out:    { r: 32, alpha: 16}
     mlp_block:   { r: 8, alpha: 2 }
     adaln:       { r: 8, alpha: 2 }
   lambd: 0.4
