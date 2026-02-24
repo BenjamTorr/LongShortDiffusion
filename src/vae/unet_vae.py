@@ -539,8 +539,8 @@ class vae_unet(nn.Module):
         with torch.no_grad():
             for batch in tqdm(loader, desc="Embedding+recon extraction", leave=False):
                 x0, _, xt, _ = batch
-                x0 = x0.to(device)
-                xt = xt.to(device)
+                x0 = x0.to(device, non_blocking=True)
+                xt = xt.to(device, non_blocking=True)
 
                 with amp_context:
                     # Current static sample
@@ -616,6 +616,8 @@ class vae_unet(nn.Module):
             for step, batch in enumerate(tqdm(loader, leave=False, desc=f"Epoch {epoch + 1}/{n_epochs}", colour="#005500")):
                 with torch.amp.autocast('cuda'):
                     x0, _, xt, _ = batch
+                    x0 = x0.to(device, non_blocking=True)
+                    xt = xt.to(device, non_blocking=True)
 
                     B, S, _ = xt.shape
 
@@ -655,6 +657,8 @@ class vae_unet(nn.Module):
                 for step, batch in enumerate(tqdm(loader_val, leave=False, desc=f"Validation Epoch {epoch + 1}/{n_epochs}", colour="#005500")):
                     with torch.amp.autocast('cuda'):
                         x0, _, xt, _  = batch
+                        x0 = x0.to(device, non_blocking=True)
+                        xt = xt.to(device, non_blocking=True)
 
                         out, _ = self.forward(x0)
 
