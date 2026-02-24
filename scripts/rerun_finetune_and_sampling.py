@@ -19,6 +19,7 @@ from run_full_experiment import (
     DEFAULT_OUTPUT_ROOT,
     ExperimentPaths,
     build_diffusion_model,
+    compact_experiment_tag,
     finetune_diffusion,
     parse_predictor_spec,
     train_ridge_models,
@@ -113,10 +114,13 @@ def copy_prior_artifacts(prev_paths: ExperimentPaths, new_paths: ExperimentPaths
 
 def build_new_run_root(prev_root: Path, cfg, output_root: Path | None, suffix: str):
     base_root = output_root or Path(getattr(cfg, "output_root", DEFAULT_OUTPUT_ROOT))
-    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
     md_suffix = metadata_suffix(cfg.metadata_path)
-    run_name = f"{prev_root.name}_{suffix}{md_suffix}_{stamp}"
-    return base_root / run_name, stamp
+    run_tag = compact_experiment_tag(getattr(cfg, "experiment_id", "rerun"))
+    suffix_tag = compact_experiment_tag(suffix, max_len=12)
+    run_name = f"{run_tag}_{suffix_tag}_{stamp}" if suffix_tag else f"{run_tag}_{stamp}"
+    legacy_run_name = f"{prev_root.name}_{suffix}{md_suffix}_{stamp}"
+    return base_root / run_name, stamp, legacy_run_name
 
 
 def load_diffusion_from_ckpt(cfg, paths: ExperimentPaths, device):
@@ -236,7 +240,9 @@ def main():
     time_tag = getattr(cfg, "time_tag", f"{cfg.time_short}min")
 
     # Create path helpers for old and new runs
-    new_root, stamp = build_new_run_root(prev_root, cfg, Path(args.output_root) if args.output_root else None, args.suffix)
+    new_root, stamp, legacy_run_name = build_new_run_root(
+        prev_root, cfg, Path(args.output_root) if args.output_root else None, args.suffix
+    )
     paths_prev = ExperimentPaths(root=prev_root, time_tag=time_tag, model_type=cfg.model_type)
     paths_new = ExperimentPaths(root=new_root, time_tag=time_tag, model_type=cfg.model_type)
 
@@ -250,6 +256,7 @@ def main():
             "run_stamp": stamp,
             "scale_tag": cfg.scale_tag,
             "time_tag": time_tag,
+            "legacy_run_name": legacy_run_name,
             "finetune_run_name": getattr(cfg.finetune, "run_name", None) if hasattr(cfg, "finetune") else None,
         },
     )

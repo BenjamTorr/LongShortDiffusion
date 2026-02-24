@@ -132,6 +132,15 @@ def metadata_suffix(metadata_path: str) -> str:
     return "_full" if stem.endswith("full") else ""
 
 
+def compact_experiment_tag(experiment_id: str, max_len: int = 24) -> str:
+    """Create a short filesystem-safe experiment tag for run folder names."""
+    cleaned = "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in str(experiment_id).strip())
+    cleaned = "_".join(part for part in cleaned.split("_") if part)
+    if not cleaned:
+        cleaned = "run"
+    return cleaned[:max_len]
+
+
 PREDICTOR_CODE_MAP = {"b": "base", "v": "vae", "c": "corr"}
 
 
@@ -1362,12 +1371,23 @@ def main():
     set_seed(cfg.seed)
     cfg.scale_tag = "scaled" if cfg.standardize else "raw"
     time_tag = f"{cfg.time_short}min"
-    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
     md_suffix = metadata_suffix(cfg.metadata_path)
-    run_root = Path(cfg.output_root) / f"{cfg.experiment_id}_{time_tag}{md_suffix}_{stamp}"
+    run_tag = compact_experiment_tag(cfg.experiment_id)
+    legacy_run_name = f"{cfg.experiment_id}_{time_tag}{md_suffix}_{stamp}"
+    run_root = Path(cfg.output_root) / f"{run_tag}_{stamp}"
     paths = ExperimentPaths(root=run_root, time_tag=time_tag, model_type=cfg.model_type)
     paths.make_dirs()
-    snapshot_config(cfg, paths, meta={"time_tag": time_tag, "run_stamp": stamp, "scale_tag": cfg.scale_tag})
+    snapshot_config(
+        cfg,
+        paths,
+        meta={
+            "time_tag": time_tag,
+            "run_stamp": stamp,
+            "scale_tag": cfg.scale_tag,
+            "legacy_run_name": legacy_run_name,
+        },
+    )
 
     print("\n=== FULL CONFIG (resolved) ===")
     print(yaml.safe_dump(ns_to_dict(cfg), sort_keys=False, default_flow_style=False))
