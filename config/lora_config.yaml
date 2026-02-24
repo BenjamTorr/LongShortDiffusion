@@ -438,7 +438,7 @@ config_19:
     proj_out:    { r: 64, alpha: 32}
     mlp_block:   { r: 8, alpha: 2 }
     adaln:       { r: 8, alpha: 2 }
-  lambd: 0.42
+  lambd: 0.4
   weight_decay: 0.0
   denoising_steps: 50
   K: 5 # number of steps in the DDIM to track gradients from 
