@@ -70,6 +70,7 @@ def apply_conditioning_filters(latents, data, use_sc=True, use_fct=True, use_cov
 
 def build_loaders(data, latents, device, batch_size, num_workers, sc_shape):
     loaders = {}
+    pin_memory = device.type == "cuda"
 
     loaders["graph_train"] = DataLoader(
         FC_SCGraphDataset(
@@ -81,12 +82,12 @@ def build_loaders(data, latents, device, batch_size, num_workers, sc_shape):
             age_dim=126,
             transform_sc=True,
             shape=sc_shape,
-            device=device,
         ),
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
         collate_fn=custom_collate_fn,
+        pin_memory=pin_memory,
     )
     loaders["graph_val"] = DataLoader(
         FC_SCGraphDataset(
@@ -98,12 +99,12 @@ def build_loaders(data, latents, device, batch_size, num_workers, sc_shape):
             age_dim=126,
             transform_sc=True,
             shape=sc_shape,
-            device=device,
         ),
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         collate_fn=custom_collate_fn,
+        pin_memory=pin_memory,
     )
 
     loaders["fm_train"] = DataLoader(
@@ -116,11 +117,11 @@ def build_loaders(data, latents, device, batch_size, num_workers, sc_shape):
             age_dim=126,
             transform_sc=True,
             shape=sc_shape,
-            device=device,
         ),
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
+        pin_memory=pin_memory,
     )
     loaders["fm_val"] = DataLoader(
         FC_SC_vec_Dataset(
@@ -132,11 +133,11 @@ def build_loaders(data, latents, device, batch_size, num_workers, sc_shape):
             age_dim=126,
             transform_sc=True,
             shape=sc_shape,
-            device=device,
         ),
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
+        pin_memory=pin_memory,
     )
 
     return loaders

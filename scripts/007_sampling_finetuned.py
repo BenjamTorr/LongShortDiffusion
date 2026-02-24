@@ -289,6 +289,7 @@ def build_loader(cfg, data, latents, device, sc_shape, split = 'train', batch_si
     Cov = data["Cov"][split]
     y   = data["target"][split]
     mask = ~torch.isnan(y)
+    pin_memory = device.type == "cuda"
 
     # ---- Build dataset depending on model type ----
     if cfg["MODEL_TYPE"] == "graph":
@@ -301,14 +302,14 @@ def build_loader(cfg, data, latents, device, sc_shape, split = 'train', batch_si
             age_dim=126,
             transform_sc=True,
             shape=sc_shape,
-            device=device,
         )
 
         return DataLoader(
             dataset,
             batch_size=batch_size,
             shuffle=(split == "train"),      # auto shuffle only for train
-            collate_fn=custom_collate_fn
+            collate_fn=custom_collate_fn,
+            pin_memory=pin_memory,
         )
 
     else:  # MODEL_TYPE == "fm"
@@ -321,13 +322,13 @@ def build_loader(cfg, data, latents, device, sc_shape, split = 'train', batch_si
             age_dim=126,
             transform_sc=True,
             shape=sc_shape,
-            device=device,
         )
 
         return DataLoader(
             dataset,
             batch_size=batch_size,
-            shuffle=(split == "train")
+            shuffle=(split == "train"),
+            pin_memory=pin_memory,
         )
 
 

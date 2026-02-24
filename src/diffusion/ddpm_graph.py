@@ -73,6 +73,9 @@ class ddpm_graph(nn.Module):
     def sample_repeated_chunked(self, cond1_data, cond2, cov_cond, n=1, chunk_size=32, amp = True):
         self.network.eval()
         with torch.no_grad():
+            cond1_data = cond1_data.to(self.device)
+            cond2 = cond2.to(self.device)
+            cov_cond = cov_cond.to(self.device)
             if amp:
                 with torch.cuda.amp.autocast():
                     cond1 = self.graph_encoder(cond1_data.x.float(), cond1_data.edge_index, edge_weight=cond1_data.edge_weight.float(), edge_attr=cond1_data.edge_attr.float())
@@ -133,6 +136,9 @@ class ddpm_graph(nn.Module):
         self.graph_encoder.eval()
 
         device = self.device
+        cond1_data = cond1_data.to(device)
+        cond2 = cond2.to(device)
+        cov_cond = cov_cond.to(device)
         if precision not in {"fp16", "bf16"}:
             raise ValueError(f"Unsupported precision='{precision}'. Use 'fp16' or 'bf16'.")
         amp_dtype = torch.float16 if precision == "fp16" else torch.bfloat16

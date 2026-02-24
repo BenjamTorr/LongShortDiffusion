@@ -173,20 +173,22 @@ vae_network = vae_unet(im_channels=1, model_config = vae_config['VAE_params']).t
 
 if scaled:
     print("Using scaled data loaders")
+    pin_memory = device.type == "cuda"
     training_loader = DataLoader(FC_SCVectorDataset(FC20_train_scaled, SC_train, FC_t_train_scaled, Cov_train, age_dim = 126, 
-                                                log_transform = False, shape = (-1, 1, 100, 100), device = device), batch_size=32, shuffle =True)
+                                                log_transform = False, shape = (-1, 1, 100, 100)), batch_size=32, shuffle =True, pin_memory=pin_memory)
     validation_loader = DataLoader(FC_SCVectorDataset(FC20_val_scaled, SC_val, FC_t_val_scaled, Cov_val, age_dim = 126, 
-                                                log_transform = False, shape = (-1, 1, 100, 100), device = device), batch_size=32, shuffle =False)
+                                                log_transform = False, shape = (-1, 1, 100, 100)), batch_size=32, shuffle =False, pin_memory=pin_memory)
     test_loader = DataLoader(FC_SCVectorDataset(FC20_test_scaled, SC_test, FC_t_test_scaled, Cov_test, age_dim = 126, 
-                                                log_transform = False, shape = (-1, 1, 100, 100), device = device), batch_size=32, shuffle =False)
+                                                log_transform = False, shape = (-1, 1, 100, 100)), batch_size=32, shuffle =False, pin_memory=pin_memory)
 else:
     print("Using unscaled data loaders")
+    pin_memory = device.type == "cuda"
     training_loader = DataLoader(FC_SCVectorDataset(FC20_train, SC_train, FC_t_train, Cov_train, age_dim = 126, 
-                                                log_transform = False, shape = (-1, 1, 100, 100), device = device), batch_size=32, shuffle =True)
+                                                log_transform = False, shape = (-1, 1, 100, 100)), batch_size=32, shuffle =True, pin_memory=pin_memory)
     validation_loader = DataLoader(FC_SCVectorDataset(FC20_val, SC_val, FC_t_val, Cov_val, age_dim = 126, 
-                                                log_transform = False, shape = (-1, 1, 100, 100), device = device), batch_size=32, shuffle =False)
+                                                log_transform = False, shape = (-1, 1, 100, 100)), batch_size=32, shuffle =False, pin_memory=pin_memory)
     test_loader = DataLoader(FC_SCVectorDataset(FC20_test, SC_test, FC_t_test, Cov_test, age_dim = 126, 
-                                                log_transform = False, shape = (-1, 1, 100, 100), device = device), batch_size=32, shuffle =False)
+                                                log_transform = False, shape = (-1, 1, 100, 100)), batch_size=32, shuffle =False, pin_memory=pin_memory)
     
 
 optimizer = torch.optim.Adam(vae_network.parameters(), lr=1e-4)

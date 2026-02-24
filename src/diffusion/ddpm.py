@@ -136,9 +136,12 @@ class ddpm(nn.Module):
     def sample_repeated_chunked(self, cond1, cond2, cov_cond, n=1, chunk_size=32, amp = True):
         self.network.eval()
         with torch.no_grad():
+            device = self.device
+            cond1 = cond1.to(device)
+            cond2 = cond2.to(device)
+            cov_cond = cov_cond.to(device)
             B, C, L = cond1.shape
             B2, S, C2, L2 = cond2.shape
-            device = cond1.device
 
             cond2 = cond2.reshape(B2 * S, C2, L2)
 
@@ -192,6 +195,9 @@ class ddpm(nn.Module):
         self.network.eval()
 
         device = self.device
+        cond1 = cond1.to(device)
+        cond2 = cond2.to(device)
+        cov_cond = cov_cond.to(device)
         if precision not in {"fp16", "bf16"}:
             raise ValueError(f"Unsupported precision='{precision}'. Use 'fp16' or 'bf16'.")
         amp_dtype = torch.float16 if precision == "fp16" else torch.bfloat16
@@ -689,6 +695,7 @@ class ddpm(nn.Module):
                 with torch.autocast(**autocast_kwargs):
                     real, cond1, cond2, cov_cond, target = batch
                     real = real.to(self.device).float()
+                    cond1 = cond1.to(self.device).float()
                     cov_cond = cov_cond.to(self.device).float()
                     cond2 = cond2.to(self.device)
                     B, S, C, _ = cond2.shape
@@ -799,6 +806,7 @@ class ddpm(nn.Module):
                 with torch.autocast(**autocast_kwargs):
                     real_FC, cond1, cond2, cov_cond, target = batch
                     real_FC = real_FC.to(self.device).float()
+                    cond1 = cond1.to(self.device).float()
                     cov_cond = cov_cond.to(self.device).float()
                     cond2 = cond2.to(self.device)
                     B, S, C, _ = cond2.shape
@@ -915,6 +923,7 @@ class ddpm(nn.Module):
                                 with torch.autocast(**autocast_kwargs):
                                     real_FC, cond1, cond2, cov_cond, target = batch
                                     real_FC = real_FC.to(self.device).float()
+                                    cond1 = cond1.to(self.device).float()
                                     cov_cond = cov_cond.to(self.device).float()
                                     cond2 = cond2.to(self.device)
                                     B, S, C, _ = cond2.shape
@@ -1148,6 +1157,7 @@ class ddpm(nn.Module):
                     with torch.autocast(**autocast_kwargs):
                         real, cond1, cond2, cov_cond, target = batch
                         real = real.to(self.device).float()
+                        cond1 = cond1.to(self.device).float()
                         cov_cond = cov_cond.to(self.device).float()
                         cond2 = cond2.to(self.device)
                         B, S, C, _ = cond2.shape
@@ -1277,6 +1287,7 @@ class ddpm(nn.Module):
                 with torch.autocast(**autocast_kwargs):
                     real_FC, cond1, cond2, cov_cond, target = batch
                     real_FC = real_FC.to(self.device).float()
+                    cond1 = cond1.to(self.device).float()
                     cov_cond = cov_cond.to(self.device).float()
                     cond2 = cond2.to(self.device)
                     B, S, C, _ = cond2.shape
@@ -1382,10 +1393,10 @@ class ddpm(nn.Module):
                     print("x0.requires_grad:", x0.requires_grad)
                     print("x.requires_grad:", x.requires_grad)
                     print("x_leaf.requires_grad:", x_leaf.requires_grad)
-                    g = torch.autograd.grad(loss, x_leaf, retain_graph=True, allow_unused=True)[0]
-                    print("grad(loss, x_leaf) None?", g is None)
-                    if g is not None:
-                        print("||grad||:", g.norm().item())
+                    #g = torch.autograd.grad(loss, x_leaf, retain_graph=True, allow_unused=True)[0]
+                    #print("grad(loss, x_leaf) None?", g is None)
+                    #if g is not None:
+                    #    print("||grad||:", g.norm().item())
 
                 # --- backward + optimizer step ---
                 scaler.scale(loss).backward()
@@ -1439,6 +1450,7 @@ class ddpm(nn.Module):
                                 with torch.autocast(**autocast_kwargs):
                                     real_FC, cond1, cond2, cov_cond, target = batch
                                     real_FC = real_FC.to(self.device).float()
+                                    cond1 = cond1.to(self.device).float()
                                     cov_cond = cov_cond.to(self.device).float()
                                     cond2 = cond2.to(self.device)
                                     B, S, C, _ = cond2.shape

@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import torch
 import yaml
+import diffusion.ddpm as ddpm_module
 
 from data.load_data import load_data
 from run_full_experiment import (
@@ -231,6 +232,7 @@ def main():
     )
 
     device = torch.device(cfg.device)
+    print(f"Using ddpm module: {ddpm_module.__file__}")
     if not torch.cuda.is_available():
         print("WARNING: CUDA not detected; downstream training will run on CPU.")
 

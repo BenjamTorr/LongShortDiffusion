@@ -26,9 +26,8 @@ def build_loader(split_data, device, batch_size):
         age_dim=126,
         log_transform=False,
         shape=(-1, 1, FC_scaled.shape[-2], FC_scaled.shape[-1]),
-        device=device,
     )
-    return DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=False, pin_memory=(device.type == "cuda"))
 
 
 def vector_to_matrix(vec, mean_mat, std_mat):

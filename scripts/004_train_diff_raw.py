@@ -148,25 +148,26 @@ if use_cond_cov == 0:
 
 
 ## Graph Loaders
+pin_memory = device.type == "cuda"
 
 training_loader = DataLoader(FC_SCGraphDataset(Z20_train,
                                                 SC_train * use_cond_sc,
                                                 Z_t_train * use_cond_3, 
                                                 Cov_train, 
                                                 y_train,age_dim = 126, 
-                                               transform_sc = (not use_sc_resample), shape = (-1, 1, 100, 100), device = device), batch_size=32, shuffle =True, collate_fn= custom_collate_fn)
+                                               transform_sc = (not use_sc_resample), shape = (-1, 1, 100, 100)), batch_size=32, shuffle =True, collate_fn= custom_collate_fn, pin_memory=pin_memory)
 validation_loader = DataLoader(FC_SCGraphDataset(Z20_val, 
                                                  SC_val * use_cond_sc, 
                                                  Z_t_val * use_cond_3, 
                                                  Cov_val,
                                                    y_val, age_dim = 126, 
-                                               transform_sc =(not use_sc_resample), shape = (-1, 1, 100, 100), device = device), batch_size=32, shuffle =False, collate_fn= custom_collate_fn)
+                                               transform_sc =(not use_sc_resample), shape = (-1, 1, 100, 100)), batch_size=32, shuffle =False, collate_fn= custom_collate_fn, pin_memory=pin_memory)
 test_loader = DataLoader(FC_SCGraphDataset(Z20_test, 
                                            SC_test * use_cond_sc, 
                                            Z_t_test * use_cond_3, 
                                            Cov_test,
                                              y_test, age_dim = 126, 
-                                               transform_sc = (not use_sc_resample), shape = (-1, 1, 100, 100), device = device), batch_size=32, shuffle =False, collate_fn= custom_collate_fn)
+                                               transform_sc = (not use_sc_resample), shape = (-1, 1, 100, 100)), batch_size=32, shuffle =False, collate_fn= custom_collate_fn, pin_memory=pin_memory)
 
 ## FiLM loader
 
@@ -175,19 +176,19 @@ training_loaderfm = DataLoader(FC_SC_vec_Dataset(Z20_train,
                                                  Z_t_train * use_cond_3, 
                                                  Cov_train,
                                                    y_train,age_dim = 126, 
-                                               transform_sc = (not use_sc_resample), shape = (-1, 1, 100, 100), device = device), batch_size=32, shuffle =True)
+                                               transform_sc = (not use_sc_resample), shape = (-1, 1, 100, 100)), batch_size=32, shuffle =True, pin_memory=pin_memory)
 validation_loaderfm = DataLoader(FC_SC_vec_Dataset(Z20_val, 
                                                    SC_val * use_cond_sc, 
                                                    Z_t_val * use_cond_3, 
                                                    Cov_val, 
                                                    y_val, age_dim = 126, 
-                                               transform_sc = (not use_sc_resample), shape = (-1, 1, 100, 100), device = device), batch_size=32, shuffle =False)
+                                               transform_sc = (not use_sc_resample), shape = (-1, 1, 100, 100)), batch_size=32, shuffle =False, pin_memory=pin_memory)
 test_loaderfm = DataLoader(FC_SC_vec_Dataset(Z20_test, 
                                              SC_test * use_cond_sc, 
                                              Z_t_test * use_cond_3, 
                                              Cov_test, 
                                              y_test, age_dim = 126, 
-                                               transform_sc = (not use_sc_resample), shape = (-1, 1, 100, 100), device = device), batch_size=32, shuffle =False)
+                                               transform_sc = (not use_sc_resample), shape = (-1, 1, 100, 100)), batch_size=32, shuffle =False, pin_memory=pin_memory)
 
 
 
@@ -216,4 +217,3 @@ if model_method == 'graph':
     ddpm_g.train_ddpm_amp(loader = training_loader, loader_val = validation_loader, n_epochs = 500,
                         optimizer= optimizer, patience = 25, accumulation_steps = 1, use_scheduler= True, debug = False, 
                         store_path = MAIN_MODEL_DIR + name + '_graphV2.pt')
-

@@ -40,17 +40,17 @@ from vae.unet_vae import vae_unet
 # Central configuration (edit in-place; no CLI needed)
 # ---------------------------------------------------------------------
 CONFIG = {
-    "experiment_id": "13min_fm",
+    "experiment_id": "5min_full_data",
     "metadata_path": "../config/metadata_full.yaml",
-    "predictors": "bvc",          # compact selector: b=base, v=vae, c=corr
-    "time_short": 13,              # FC_t window in minutes (1-7)
+    "predictors": "bc",          # compact selector: b=base, v=vae, c=corr
+    "time_short": 7,              # FC_t window in minutes (1-7)
     "model_type": "fm",        # "graph" or "fm"
     "standardize": False,          # subtract mean / divide std of FC20
     "use_sc": True,
     "use_fct": True,
     "use_cov": True,
     "use_resample": False,        # gaussian resample SC
-    "device": "cuda:0",
+    "device": "cuda:1",
     "seed": 1,
     "num_workers": 0,
     "output_root": "/data/benjamin_project/diffusion_models/experiments/times",
@@ -59,7 +59,7 @@ CONFIG = {
     "vae": {
         "epochs": 200,
         "batch_size": 16,
-        "lr": 1e-4,
+        "lr": 3e-4,
         "patience": 15,
         "accumulation_steps": 4,
     },
@@ -67,10 +67,10 @@ CONFIG = {
     # Diffusion
     "diffusion": {
         "epochs": 200,
-        "lr": 1e-4,
-        "patience": 20,
+        "lr": 8e-5,
+        "patience": 15,
         "accumulation_steps": 1,
-        "use_scheduler": True,
+        "use_scheduler": False,
         "batch_size": 32,
     },
 
@@ -88,16 +88,16 @@ CONFIG = {
 
     # Ridge predictor + LoRA fine-tuning
     "ridge": {
-        "ridge_grid": [float(x) for x in torch.logspace(-2, 2, steps=100)],
+        "ridge_grid": [float(x) for x in torch.logspace(-2, 5, steps=200)],
         "n_latent_samples": 10,
         "plot": True,
         "batch_size": 256,
     },
     "finetune": {
-        "run_name": "config_1",   # key in config/lora_config.yaml
-        "epochs": 3,
-        "patience": 10000,
-        "use_scheduler": True,
+        "run_name": "config_19",   # key in config/lora_config.yaml
+        "epochs": 4,
+        "patience": 10,
+        "use_scheduler": False,
         "evaluate_baseline": True,
         "debug_lora_grads": False,   # print LoRA grad norms each optimizer step
     },
@@ -323,6 +323,7 @@ def build_vae_loaders(
     cov_train, cov_val, cov_test = cov_sets
 
     shape = (-1, 1, sc_size, sc_size)
+    pin_memory = device.type == "cuda"
 
     train_loader = DataLoader(
         FC_SCVectorDataset(
@@ -333,10 +334,10 @@ def build_vae_loaders(
             age_dim=126,
             log_transform=False,
             shape=shape,
-            device=device,
         ),
         batch_size=batch_size,
         shuffle=True,
+        pin_memory=pin_memory,
     )
     val_loader = DataLoader(
         FC_SCVectorDataset(
@@ -347,10 +348,10 @@ def build_vae_loaders(
             age_dim=126,
             log_transform=False,
             shape=shape,
-            device=device,
         ),
         batch_size=batch_size,
         shuffle=False,
+        pin_memory=pin_memory,
     )
     test_loader = DataLoader(
         FC_SCVectorDataset(
@@ -361,10 +362,10 @@ def build_vae_loaders(
             age_dim=126,
             log_transform=False,
             shape=shape,
-            device=device,
         ),
         batch_size=batch_size,
         shuffle=False,
+        pin_memory=pin_memory,
     )
 
     return train_loader, val_loader, test_loader
@@ -384,6 +385,7 @@ def build_vae_loaders_export(
     cov_train, cov_val, cov_test = cov_sets
 
     shape = (-1, 1, sc_size, sc_size)
+    pin_memory = device.type == "cuda"
 
     train_loader = DataLoader(
         FC_SCVectorDataset(
@@ -394,10 +396,10 @@ def build_vae_loaders_export(
             age_dim=126,
             log_transform=False,
             shape=shape,
-            device=device,
         ),
         batch_size=batch_size,
         shuffle=False,
+        pin_memory=pin_memory,
     )
     val_loader = DataLoader(
         FC_SCVectorDataset(
@@ -408,10 +410,10 @@ def build_vae_loaders_export(
             age_dim=126,
             log_transform=False,
             shape=shape,
-            device=device,
         ),
         batch_size=batch_size,
         shuffle=False,
+        pin_memory=pin_memory,
     )
     test_loader = DataLoader(
         FC_SCVectorDataset(
@@ -422,10 +424,10 @@ def build_vae_loaders_export(
             age_dim=126,
             log_transform=False,
             shape=shape,
-            device=device,
         ),
         batch_size=batch_size,
         shuffle=False,
+        pin_memory=pin_memory,
     )
 
     return train_loader, val_loader, test_loader
@@ -518,6 +520,7 @@ def build_diffusion_loaders(
     paths: ExperimentPaths | None = None,
 ):
     loaders = {}
+    pin_memory = device.type == "cuda"
     sc_train, sc_val, sc_test = data["SC"]["train"], data["SC"]["val"], data["SC"]["test"]
     # Resample SC at most once and reuse across all loaders. If paths provided,
     # persist resampled SC to disk so future reruns can reuse the exact draw.
@@ -547,12 +550,12 @@ def build_diffusion_loaders(
             age_dim=126,
             transform_sc=not use_resample,
             shape=sc_shape,
-            device=device,
         ),
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
         collate_fn=custom_collate_fn,
+        pin_memory=pin_memory,
     )
     loaders["graph_val"] = DataLoader(
         FC_SCGraphDataset(
@@ -564,12 +567,12 @@ def build_diffusion_loaders(
             age_dim=126,
             transform_sc=not use_resample,
             shape=sc_shape,
-            device=device,
         ),
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         collate_fn=custom_collate_fn,
+        pin_memory=pin_memory,
     )
 
     loaders["fm_train"] = DataLoader(
@@ -582,11 +585,11 @@ def build_diffusion_loaders(
             age_dim=126,
             transform_sc=not use_resample,
             shape=sc_shape,
-            device=device,
         ),
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
+        pin_memory=pin_memory,
     )
     loaders["fm_val"] = DataLoader(
         FC_SC_vec_Dataset(
@@ -598,11 +601,11 @@ def build_diffusion_loaders(
             age_dim=126,
             transform_sc=not use_resample,
             shape=sc_shape,
-            device=device,
         ),
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
+        pin_memory=pin_memory,
     )
     return loaders
 
@@ -675,9 +678,9 @@ def build_finetune_loader(cfg, data, latents, device, sc_shape, split="train", b
             resampled_dir = paths.root / "resampled_sc"
             train_p, val_p, test_p = resampled_dir / "train.pt", resampled_dir / "val.pt", resampled_dir / "test.pt"
             if train_p.exists() and val_p.exists() and test_p.exists():
-                data["SC"]["train"] = torch.load(train_p, map_location=device)
-                data["SC"]["val"] = torch.load(val_p, map_location=device)
-                data["SC"]["test"] = torch.load(test_p, map_location=device)
+                data["SC"]["train"] = torch.load(train_p, map_location="cpu")
+                data["SC"]["val"] = torch.load(val_p, map_location="cpu")
+                data["SC"]["test"] = torch.load(test_p, map_location="cpu")
                 data["_sc_resampled"] = True
         if not data.get("_sc_resampled", False):
             for sp in ["train", "val", "test"]:
@@ -698,6 +701,7 @@ def build_finetune_loader(cfg, data, latents, device, sc_shape, split="train", b
     cov = data["Cov"][split]
     y = data["target"][split]
     mask = ~torch.isnan(y)
+    pin_memory = device.type == "cuda"
 
     if cfg.model_type == "graph":
         dataset = FC_SCGraphDataset(
@@ -709,9 +713,8 @@ def build_finetune_loader(cfg, data, latents, device, sc_shape, split="train", b
             age_dim=126,
             transform_sc=(not cfg.use_resample),
             shape=sc_shape,
-            device=device,
         )
-        return DataLoader(dataset, batch_size=batch_size, shuffle=(split == "train"), collate_fn=custom_collate_fn)
+        return DataLoader(dataset, batch_size=batch_size, shuffle=(split == "train"), collate_fn=custom_collate_fn, pin_memory=pin_memory)
 
     dataset = FC_SC_vec_Dataset(
         fc20[mask],
@@ -722,9 +725,8 @@ def build_finetune_loader(cfg, data, latents, device, sc_shape, split="train", b
         age_dim=126,
         transform_sc=(not cfg.use_resample),
         shape=sc_shape,
-        device=device,
     )
-    return DataLoader(dataset, batch_size=batch_size, shuffle=(split == "train"))
+    return DataLoader(dataset, batch_size=batch_size, shuffle=(split == "train"), pin_memory=pin_memory)
 
 
 def decode_samples(vae, samples, device, n_samples_per_subject: int, sc_size: int, batch_size: int):
@@ -775,6 +777,7 @@ def train_ridge_models(
     if cfg.use_resample:
         sc_train = gaussian_resample(sc_train, seed=cfg.seed)
         sc_val = gaussian_resample(sc_val, seed=cfg.seed)
+    pin_memory = device.type == "cuda"
 
     train_loader = DataLoader(
         FC_SCGraphDataset(
@@ -786,11 +789,11 @@ def train_ridge_models(
             age_dim=126,
             transform_sc= (not cfg.use_resample),
             shape=shape,
-            device=device,
         ),
         batch_size=cfg.ridge.batch_size,
         shuffle=True,
         collate_fn=custom_collate_fn,
+        pin_memory=pin_memory,
     )
 
     val_loader = DataLoader(
@@ -803,11 +806,11 @@ def train_ridge_models(
             age_dim=126,
             transform_sc=(not cfg.use_resample),
             shape=shape,
-            device=device,
         ),
         batch_size=cfg.ridge.batch_size,
         shuffle=False,
         collate_fn=custom_collate_fn,
+        pin_memory=pin_memory,
     )
 
     vae = load_trained_vae(cfg, paths, device) if "vae" in selected_predictors else None
@@ -1008,9 +1011,9 @@ def sample_diffusion(cfg, model, data, paths: ExperimentPaths, device, sc_shape,
             resampled_dir = paths.root / "resampled_sc"
             train_p, val_p, test_p = resampled_dir / "train.pt", resampled_dir / "val.pt", resampled_dir / "test.pt"
             if train_p.exists() and val_p.exists() and test_p.exists():
-                data["SC"]["train"] = torch.load(train_p, map_location=device)
-                data["SC"]["val"] = torch.load(val_p, map_location=device)
-                data["SC"]["test"] = torch.load(test_p, map_location=device)
+                data["SC"]["train"] = torch.load(train_p, map_location="cpu")
+                data["SC"]["val"] = torch.load(val_p, map_location="cpu")
+                data["SC"]["test"] = torch.load(test_p, map_location="cpu")
                 data["_sc_resampled"] = True
         if not data.get("_sc_resampled", False):
             for sp in ["train", "val", "test"]:
@@ -1027,7 +1030,6 @@ def sample_diffusion(cfg, model, data, paths: ExperimentPaths, device, sc_shape,
             age_dim=126,
             transform_sc= (not cfg.use_resample),
             shape=sc_shape,
-            device=device,
         )
         loader = DataLoader(
             dataset,
@@ -1035,6 +1037,7 @@ def sample_diffusion(cfg, model, data, paths: ExperimentPaths, device, sc_shape,
             shuffle=False,
             num_workers=cfg.num_workers,
             collate_fn=custom_collate_fn,
+            pin_memory=(device.type == "cuda"),
         )
     else:
         dataset = FC_SC_vec_Dataset(
@@ -1046,9 +1049,8 @@ def sample_diffusion(cfg, model, data, paths: ExperimentPaths, device, sc_shape,
             age_dim=126,
             transform_sc= (not cfg.use_resample),
             shape=sc_shape,
-            device=device,
         )
-        loader = DataLoader(dataset, batch_size=cfg.sampling.batch_size, shuffle=False, num_workers=cfg.num_workers)
+        loader = DataLoader(dataset, batch_size=cfg.sampling.batch_size, shuffle=False, num_workers=cfg.num_workers, pin_memory=(device.type == "cuda"))
 
     vae = load_trained_vae(cfg, paths, device)
 
