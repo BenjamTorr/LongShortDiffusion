@@ -430,3 +430,27 @@ config_18:
   include_mlp: true
   include_ln: true
   use_scheduler: false
+
+config_19:
+  lora_dims:
+    attn_proj:   { r: 8, alpha: 2 }
+    output_proj: { r: 8, alpha: 2 }
+    proj_out:    { r: 64, alpha: 32}
+    mlp_block:   { r: 8, alpha: 2 }
+    adaln:       { r: 8, alpha: 2 }
+  lambd: 0.42
+  weight_decay: 0.0
+  denoising_steps: 50
+  K: 5 # number of steps in the DDIM to track gradients from 
+  batch_size: 8
+  accumulation_steps: 8
+  include_diff_loss: true # include regularzation
+  use_fc20_as_target: false # whether to predict R(X_high)
+  L1: false #wheter to use l1 loss
+  LV: true #low variance option, repeat lasst denoising step -> predict several times
+  n_rep: 2
+  m: 5 # number of matrices to sample, predict and then average results before comparing
+  lr: 0.0004
+  include_mlp: true
+  include_ln: true
+  use_scheduler: false
