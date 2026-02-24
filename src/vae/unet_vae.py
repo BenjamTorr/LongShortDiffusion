@@ -16,6 +16,10 @@ def kl_div( mu, logvar):
     kl_div = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / mu.size(0)
     return kl_div
 
+def sample_slice(S, p0=0.7):
+    if random.random() < p0:
+        return 0
+    return random.randint(1, S - 1)
 
 def get_time_embedding(time_steps, temb_dim):
     r"""
@@ -624,7 +628,7 @@ class vae_unet(nn.Module):
                     recon_loss += F.mse_loss(x0, out)
 
 
-                    s_idx = random.randint(0, S - 1)
+                    s_idx = sample_slice(S, p0=0.85)
                     xt_single = xt[:, s_idx, :].reshape(B, 1, -1)
 
                     out, encoder_output = self.forward(xt_single)
@@ -655,7 +659,7 @@ class vae_unet(nn.Module):
                         out, _ = self.forward(x0)
 
                         B, S, _ = xt.shape
-                        s_idx = random.randint(0, S - 1)
+                        s_idx = 0
                         xt_single = xt[:, s_idx, :].reshape(B, 1, -1)
                         out3, _ = self.forward(xt_single)
 

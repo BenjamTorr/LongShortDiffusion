@@ -21,6 +21,11 @@ import secrets, string
 import copy
 from contextlib import nullcontext
 
+def sample_slice(S, p0=0.7):
+    if random.random() < p0:
+        return 0
+    return random.randint(1, S - 1)
+
 def cosine_beta_schedule(n_steps, s=0.008, device="cpu"):
     steps = n_steps + 1
     x = torch.linspace(0, n_steps, steps, device=device) / n_steps
@@ -312,7 +317,7 @@ class ddpm(nn.Module):
                     cov_cond = cov_cond.to(self.device).float()
                     cond1 = cond1.to(self.device).float()
                     B, S, C, _ = cond2.shape
-                    s_idx = random.randint(0, S - 1)
+                    s_idx = sample_slice(S, p0=0.85)
                     cond2 = cond2[:, s_idx].to(self.device).reshape(B,C,-1)
                     n = len(x0)
 
@@ -349,7 +354,7 @@ class ddpm(nn.Module):
                         cov_cond = cov_cond.to(self.device).float()
                         cond1 = cond1.to(self.device).float()
                         B, S, C, _ = cond2.shape
-                        s_idx = random.randint(0, S - 1)
+                        s_idx = 0
                         cond2 = cond2[:, s_idx].to(self.device).reshape(B,C,-1)
                         n = len(x0)
 
@@ -464,7 +469,7 @@ class ddpm(nn.Module):
                     cov_cond = cov_cond.to(self.device).float()
                     cond1 = cond1.to(self.device).float()
                     B, S, C, _ = cond2.shape
-                    s_idx = random.randint(0, S - 1)
+                    s_idx =  sample_slice(S, p0=0.85)
                     cond2 = cond2[:, s_idx].to(self.device).reshape(B, C, -1)
                     n = len(x0)
 
@@ -507,7 +512,7 @@ class ddpm(nn.Module):
                         cov_cond = cov_cond.to(self.device).float()
                         cond1 = cond1.to(self.device).float()
                         B, S, C, _ = cond2.shape
-                        s_idx = random.randint(0, S - 1)
+                        s_idx = 0
                         cond2 = cond2[:, s_idx].to(self.device).reshape(B, C, -1)
                         n = len(x0)
 
@@ -1276,7 +1281,7 @@ class ddpm(nn.Module):
                     cond2 = cond2.to(self.device)
                     B, S, C, _ = cond2.shape
                     #s_idx = random.randint(0, S - 1)
-                    s_idx = 0
+                    s_idx = sample_slice(S, p0=0.95)
                     cond2 = cond2[:, s_idx].to(self.device).reshape(B, C, -1)
                     target = target.to(self.device).float()
                     # Normalize targets once per batch for feature loss
