@@ -793,6 +793,16 @@ class ddpm(nn.Module):
         ax.set_ylabel("Loss")
         ax.set_title("Training Loss over Epochs")
 
+        fig_mse, ax_mse = plt.subplots()
+        ax_mse.set_xlabel("Steps")
+        ax_mse.set_ylabel("MSE")
+        ax_mse.set_title("Validation MSE (pred vs y)")
+
+        fig_corr, ax_corr = plt.subplots()
+        ax_corr.set_xlabel("Steps")
+        ax_corr.set_ylabel("Pearson r")
+        ax_corr.set_title("Validation Correlation (pred vs y)")
+
         reversed_steps = torch.linspace(0, self.n_steps - 1, denoising_steps, device=self.device).round().long().flip(0)
         best_loss = float("inf")
         step_count = 0
@@ -1275,6 +1285,8 @@ class ddpm(nn.Module):
         step_loss = 0.0
         step_loss_count = 0
         best_loss_raw = 0.0
+        val_mse_curve = []
+        val_corr_curve = []
         for epoch in tqdm(range(n_epochs), desc="Training progress", colour="#00ff00"):
             self.network.train()
             if debug:
@@ -1393,10 +1405,10 @@ class ddpm(nn.Module):
                     print("x0.requires_grad:", x0.requires_grad)
                     print("x.requires_grad:", x.requires_grad)
                     print("x_leaf.requires_grad:", x_leaf.requires_grad)
-                    #g = torch.autograd.grad(loss, x_leaf, retain_graph=True, allow_unused=True)[0]
-                    #print("grad(loss, x_leaf) None?", g is None)
-                    #if g is not None:
-                    #    print("||grad||:", g.norm().item())
+                    g = torch.autograd.grad(loss, x_leaf, retain_graph=True, allow_unused=True)[0]
+                    print("grad(loss, x_leaf) None?", g is None)
+                    if g is not None:
+                        print("||grad||:", g.norm().item())
 
                 # --- backward + optimizer step ---
                 scaler.scale(loss).backward()
@@ -1444,6 +1456,12 @@ class ddpm(nn.Module):
                         # ======================================================
                         self.network.eval()
                         val_loss, val_feat_loss, val_feat_loss_raw = 0.0, 0.0, 0.0
+                        corr_count = 0
+                        corr_sum_x = 0.0
+                        corr_sum_y = 0.0
+                        corr_sum_x2 = 0.0
+                        corr_sum_y2 = 0.0
+                        corr_sum_xy = 0.0
 
                         with torch.no_grad():
                             for vstep, batch in enumerate(tqdm(loader_val, leave=False, desc="Validation", colour="#005500")):
@@ -1509,6 +1527,21 @@ class ddpm(nn.Module):
                                     val_loss += loss_total.item() * n / len(loader_val.dataset)
                                     val_feat_loss += loss_feat_norm.item() * n / len(loader_val.dataset)
                                     val_feat_loss_raw += loss_feat_raw.item() * n / len(loader_val.dataset)
+
+                                    pred_flat = feat_pred.detach().reshape(-1).double().cpu()
+                                    target_flat = target.detach().reshape(-1).double().cpu()
+                                    corr_count += pred_flat.numel()
+                                    corr_sum_x += pred_flat.sum().item()
+                                    corr_sum_y += target_flat.sum().item()
+                                    corr_sum_x2 += (pred_flat * pred_flat).sum().item()
+                                    corr_sum_y2 += (target_flat * target_flat).sum().item()
+                                    corr_sum_xy += (pred_flat * target_flat).sum().item()
+
+                        corr_num = (corr_count * corr_sum_xy) - (corr_sum_x * corr_sum_y)
+                        corr_den_x = (corr_count * corr_sum_x2) - (corr_sum_x * corr_sum_x)
+                        corr_den_y = (corr_count * corr_sum_y2) - (corr_sum_y * corr_sum_y)
+                        corr_den = math.sqrt(max(corr_den_x, 0.0) * max(corr_den_y, 0.0))
+                        val_corr = corr_num / corr_den if corr_den > 1e-12 else float("nan")
                         # ======================================================
                         # 🔹 Early stopping & logging
                         # ======================================================
@@ -1532,7 +1565,8 @@ class ddpm(nn.Module):
                             f"Step {step_count:5d} | LR={current_lr:.2e} | "
                             f"Train={step_loss / step_loss_count:.4f} | Val={val_loss:.4f} | "
                             f"Val_feat={val_feat_loss:.4f} | Best={best_loss:.4f} (step {best_step}) | "
-                            f"Val_feat_raw={val_feat_loss_raw:.4f} | Best_raw={best_loss_raw:.4f}"
+                            f"Val_feat_raw={val_feat_loss_raw:.4f} | Best_raw={best_loss_raw:.4f} | "
+                            f"Val_corr={val_corr:.4f}"
                         )
 
 
@@ -1541,15 +1575,27 @@ class ddpm(nn.Module):
                         # --- Plot & print ---
                         losses.append(step_loss / step_loss_count)
                         val_losses.append(val_loss)
+                        val_mse_curve.append(val_feat_loss_raw)
+                        val_corr_curve.append(val_corr)
                         clear_output(wait=True)
                         ax.clear()
                         ax.plot(losses, label="Train", color="blue")
                         ax.plot(val_losses, label="Val", color="red")
                         ax.legend(loc="upper right")
+                        ax_mse.clear()
+                        ax_mse.plot(val_mse_curve, label="Val MSE(pred, y)", color="green")
+                        ax_mse.legend(loc="upper right")
+                        ax_corr.clear()
+                        ax_corr.plot(val_corr_curve, label="Val Corr(pred, y)", color="purple")
+                        ax_corr.legend(loc="lower right")
 
 
                         save_plot_path = os.path.join(save_dir, f"l_{model_id}_{current_time}.png")
                         fig.savefig(save_plot_path, dpi=150, bbox_inches="tight")
+                        save_mse_plot_path = os.path.join(save_dir, f"val_mse_{model_id}_{current_time}.png")
+                        fig_mse.savefig(save_mse_plot_path, dpi=150, bbox_inches="tight")
+                        save_corr_plot_path = os.path.join(save_dir, f"val_corr_{model_id}_{current_time}.png")
+                        fig_corr.savefig(save_corr_plot_path, dpi=150, bbox_inches="tight")
                         plt.imsave(os.path.join(save_dir, f"l_{model_id}_{current_time}_gen{step_count}.png"), mat_x_debug.float().numpy(), cmap="RdBu", vmin=-1, vmax=1)
                         step_loss = 0.0
                         step_loss_count = 0
