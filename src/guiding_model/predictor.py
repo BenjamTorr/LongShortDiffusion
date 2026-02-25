@@ -20,8 +20,9 @@ def upper_triangle_from_fc(FC: torch.Tensor, offset: int = 1) -> torch.Tensor:
     return FC[:, iu[0], iu[1]]  # (B, L)
 
 def _row_corr_normalize(X, eps=1e-8):
-    Xc = X - X.mean(dim=1, keepdim=True)
-    return Xc / (Xc.norm(dim=1, keepdim=True) + eps)
+    # Normalize along the feature axis so both (B, D) and (B, 1, D) inputs work.
+    Xc = X - X.mean(dim=-1, keepdim=True)
+    return Xc / (Xc.norm(dim=-1, keepdim=True) + eps)
 
 # -----------------------------
 # Closed-form Ridge regression: FC -> scalar
