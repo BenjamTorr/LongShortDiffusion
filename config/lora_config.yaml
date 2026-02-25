@@ -442,7 +442,7 @@ config_19:
   weight_decay: 0.0
   denoising_steps: 50
   K: 5 # number of steps in the DDIM to track gradients from 
-  batch_size: 8
+  batch_size: 4
   accumulation_steps: 8
   include_diff_loss: true # include regularzation
   use_fc20_as_target: false # whether to predict R(X_high)
