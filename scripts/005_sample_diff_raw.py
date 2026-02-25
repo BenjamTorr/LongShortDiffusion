@@ -64,6 +64,7 @@ CONFIG = {
     # -------------------- Sampling parameters -----------------
     "DENOISING_STEPS": 50,
     "ETA": 0.0,
+    "SLICE_INDEX": 0,  # set to None to sample all slices
     "N_SAMPLES_PER_SUBJECT": 10,
     "CHUNK_SIZE": 512,
     "DECODE_BATCH_SIZE": 50,
@@ -348,6 +349,7 @@ def main(cfg):
                 chunk_size=cfg["CHUNK_SIZE"],
                 amp=True,
                 grad=False,
+                slice_index=cfg.get("SLICE_INDEX", 0),
             )
 
             all_samples.append(samples)
@@ -373,7 +375,7 @@ def main(cfg):
     recon = torch.cat(decoded_list, dim=0)
 
     # ---- Save ----
-    out_path = out_dir / f"FC_gen_{cfg['MODEL_NAME']}_{CONFIG["SPLIT"]}.pt"
+    out_path = out_dir / f"FC_gen_{cfg['MODEL_NAME']}_{cfg['SPLIT']}.pt"
     torch.save(recon.cpu(), out_path)
     print(f"\nSaved generated FC matrices to:\n{out_path}\n")
 

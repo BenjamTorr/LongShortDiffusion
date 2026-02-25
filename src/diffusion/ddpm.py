@@ -189,7 +189,8 @@ class ddpm(nn.Module):
         chunk_size=32,
         amp=True,
         precision="bf16",
-        grad=False
+        grad=False,
+        slice_index=None,
     ):
         cond1 = cond1_data
         self.network.eval()
@@ -208,28 +209,34 @@ class ddpm(nn.Module):
             B,  L = cond1.shape
             B2, S, C2, L2 = cond2.shape
 
-            cond2 = cond2.reshape(B2 * S, C2, L2)
+            if slice_index is not None:
+                if not (0 <= slice_index < S):
+                    raise ValueError(f"slice_index={slice_index} out of range for S={S}")
+                cond2 = cond2[:, slice_index : slice_index + 1]
+                S_eff = 1
+            else:
+                S_eff = S
 
             # Step 1: repeat cond1 and cov S times (one copy per slice)
-            cond1_S = cond1.repeat_interleave(S, dim=0)      # (B*S, L)
-            cov_S   = cov_cond.repeat_interleave(S, dim=0)   # (B*S, D)
+            cond1_S = cond1.repeat_interleave(S_eff, dim=0)      # (B*S_eff, L)
+            cov_S   = cov_cond.repeat_interleave(S_eff, dim=0)   # (B*S_eff, D)
 
             # Step 2: repeat those n times
             cond1_rep_full = cond1_S.unsqueeze(1).repeat(1, n, 1)\
-                                            .reshape(B * S * n, L)
+                                            .reshape(B * S_eff * n, L)
 
             cov_cond   = cov_S.unsqueeze(1).repeat(1, n, 1)\
-                                            .reshape(B * S * n, cov_cond.shape[1])
+                                            .reshape(B * S_eff * n, cov_cond.shape[1])
 
             # Step 3: cond2 already has S slices → flatten first
-            cond2_flat = cond2.reshape(B2 * S, C2, L2)
+            cond2_flat = cond2.reshape(B2 * S_eff, C2, L2)
 
             # Step 4: repeat cond2 n times (per slice)
             cond2_rep_full = cond2_flat.unsqueeze(1).repeat(1, n, 1, 1)\
-                                                .reshape(B2 * S * n, C2, L2)
+                                                .reshape(B2 * S_eff * n, C2, L2)
 
 
-            total_samples = B * n * S
+            total_samples = B * n * S_eff
             x_final = torch.zeros(total_samples, self.c, self.l, device=device)
 
             # Process in chunks
@@ -279,7 +286,7 @@ class ddpm(nn.Module):
 
                 x_final[start:end] = x.float()
 
-        return x_final.reshape(B2, S, n, self.c, self.l)
+        return x_final.reshape(B2, S_eff, n, self.c, self.l)
 
     def train_ddpm_amp(self, loader, loader_val, n_epochs, optimizer, patience= 10, accumulation_steps = 1, use_scheduler = False, debug = False, store_path="models/ddpm_cond_model.pt"):
         mse = nn.MSELoss()

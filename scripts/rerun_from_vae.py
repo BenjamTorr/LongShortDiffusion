@@ -73,6 +73,10 @@ def load_previous_config(prev_root: Path):
         cfg.ridge.plot = True
     if not hasattr(cfg.ridge, "ridge_grid"):
         cfg.ridge.ridge_grid = [float(x) for x in torch.logspace(-2, 2, steps=100)]
+    if not hasattr(cfg, "sampling"):
+        cfg.sampling = SimpleNamespace()
+    if not hasattr(cfg.sampling, "slice_index"):
+        cfg.sampling.slice_index = 0
     return cfg
 
 

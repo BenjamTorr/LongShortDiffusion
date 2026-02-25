@@ -40,17 +40,17 @@ from vae.unet_vae import vae_unet
 # Central configuration (edit in-place; no CLI needed)
 # ---------------------------------------------------------------------
 CONFIG = {
-    "experiment_id": "5min_full_data",
+    "experiment_id": "4min_full_data",
     "metadata_path": "../config/metadata_full.yaml",
     "predictors": "bc",          # compact selector: b=base, v=vae, c=corr
-    "time_short": 7,              # FC_t window in minutes (1-7)
+    "time_short": 4,              # FC_t window in minutes (1-7)
     "model_type": "fm",        # "graph" or "fm"
     "standardize": False,          # subtract mean / divide std of FC20
     "use_sc": True,
     "use_fct": True,
     "use_cov": True,
     "use_resample": False,        # gaussian resample SC
-    "device": "cuda:1",
+    "device": "cuda:2",
     "seed": 1,
     "num_workers": 0,
     "output_root": "/data/benjamin_project/diffusion_models/experiments/times",
@@ -58,10 +58,10 @@ CONFIG = {
     # VAE
     "vae": {
         "epochs": 200,
-        "batch_size": 16,
+        "batch_size": 32,
         "lr": 3e-4,
         "patience": 15,
-        "accumulation_steps": 4,
+        "accumulation_steps": 2,
     },
 
     # Diffusion
@@ -71,7 +71,7 @@ CONFIG = {
         "patience": 15,
         "accumulation_steps": 1,
         "use_scheduler": False,
-        "batch_size": 32,
+        "batch_size": 64,
     },
 
     # Sampling
@@ -79,6 +79,7 @@ CONFIG = {
         "denoising_steps": 50,
         "eta": 0.0,
         "precision": "bf16",
+        "slice_index": 0,  # set to None to sample all slices
         "n_samples_per_subject": 10,
         "chunk_size": 512,
         "decode_batch_size": 50,
@@ -1077,6 +1078,7 @@ def sample_diffusion(cfg, model, data, paths: ExperimentPaths, device, sc_shape,
                 amp=True,
                 precision=getattr(cfg.sampling, "precision", "bf16"),
                 grad=False,
+                slice_index=getattr(cfg.sampling, "slice_index", 0),
             )
             all_samples.append(samples)
 
@@ -1331,6 +1333,7 @@ def sample_finetuned(cfg, data, paths: ExperimentPaths, device, sc_size: int, pr
                 amp=True,
                 precision=getattr(cfg.sampling, "precision", "bf16"),
                 grad=False,
+                slice_index=getattr(cfg.sampling, "slice_index", 0),
             )
             all_samples.append(samples)
 

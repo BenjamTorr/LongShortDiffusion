@@ -68,6 +68,7 @@ CONFIG = {
     # -------------------- Sampling parameters -----------------
     "DENOISING_STEPS": 50,
     "ETA": 0.0,
+    "SLICE_INDEX": 0,  # set to None to sample all slices
     "N_SAMPLES_PER_SUBJECT": 10,
     "CHUNK_SIZE": 512,
     "DECODE_BATCH_SIZE": 50,
@@ -418,6 +419,7 @@ def main(cfg):
                 chunk_size=cfg["CHUNK_SIZE"],
                 amp=True,
                 grad=False,
+                slice_index=cfg.get("SLICE_INDEX", 0),
             )
 
             all_samples.append(samples)

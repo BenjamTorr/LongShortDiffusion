@@ -89,6 +89,7 @@ def main():
     parser.add_argument("--chunk-size", type=int, default=None, help="Override cfg.sampling.chunk_size.")
     parser.add_argument("--decode-batch-size", type=int, default=None, help="Override cfg.sampling.decode_batch_size.")
     parser.add_argument("--batch-size", type=int, default=None, help="Override cfg.sampling.batch_size.")
+    parser.add_argument("--slice-index", type=int, default=None, help="Override cfg.sampling.slice_index (use 0 for first slice).")
     args = parser.parse_args()
 
     run_root = Path(args.run_root).expanduser().resolve()
@@ -118,6 +119,8 @@ def main():
         cfg.sampling.decode_batch_size = args.decode_batch_size
     if args.batch_size is not None:
         cfg.sampling.batch_size = args.batch_size
+    if args.slice_index is not None:
+        cfg.sampling.slice_index = args.slice_index
 
     time_tag = getattr(cfg, "time_tag", f"{cfg.time_short}min")
     paths = ExperimentPaths(root=run_root, time_tag=time_tag, model_type=cfg.model_type)
@@ -149,6 +152,7 @@ def main():
     print("sampling.chunk_size   :", cfg.sampling.chunk_size)
     print("sampling.decode_batch :", cfg.sampling.decode_batch_size)
     print("sampling.batch_size   :", cfg.sampling.batch_size)
+    print("sampling.slice_index  :", getattr(cfg.sampling, "slice_index", 0))
 
     if not args.skip_raw:
         print("\n[1/2] Resampling raw diffusion outputs...")
