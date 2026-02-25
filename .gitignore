@@ -11,6 +11,8 @@ dist/
 .venv/
 venv/
 env/
+scripts/ed5519 
+scripts/ed5519.pub
 
 # Jupyter notebooks
 notebooks/
