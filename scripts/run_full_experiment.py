@@ -671,6 +671,14 @@ def build_prediction_model(path: Path, device, corr_ker: bool = False):
     return model
 
 
+def _prediction_mask(y: torch.Tensor, split: str) -> torch.Tensor:
+    mask = ~torch.isnan(y)
+    valid = int(mask.sum().item())
+    if valid == 0:
+        raise ValueError(f"No valid prediction targets available for split='{split}' after masking.")
+    return mask
+
+
 def build_finetune_loader(cfg, data, latents, device, sc_shape, split="train", batch_size=4, paths: ExperimentPaths | None = None):
     # Resample SC only once for all splits; reuse thereafter. If previously
     # saved resamples exist on disk, load and reuse them to match prior runs.
@@ -701,7 +709,9 @@ def build_finetune_loader(cfg, data, latents, device, sc_shape, split="train", b
     sc = data["SC"][split]
     cov = data["Cov"][split]
     y = data["target"][split]
-    mask = ~torch.isnan(y)
+    real_y = data.get("target_real", {}).get(split, y)
+    real_fc20 = data.get("FC", {}).get(split, None)
+    mask = _prediction_mask(y, split=split)
     pin_memory = device.type == "cuda"
 
     if cfg.model_type == "graph":
@@ -715,6 +725,8 @@ def build_finetune_loader(cfg, data, latents, device, sc_shape, split="train", b
             transform_sc=(not cfg.use_resample),
             shape=sc_shape,
         )
+        dataset.real_target = real_y[mask]
+        dataset.real_fc20 = real_fc20[mask] if real_fc20 is not None else None
         return DataLoader(dataset, batch_size=batch_size, shuffle=(split == "train"), collate_fn=custom_collate_fn, pin_memory=pin_memory)
 
     dataset = FC_SC_vec_Dataset(
@@ -727,6 +739,8 @@ def build_finetune_loader(cfg, data, latents, device, sc_shape, split="train", b
         transform_sc=(not cfg.use_resample),
         shape=sc_shape,
     )
+    dataset.real_target = real_y[mask]
+    dataset.real_fc20 = real_fc20[mask] if real_fc20 is not None else None
     return DataLoader(dataset, batch_size=batch_size, shuffle=(split == "train"), pin_memory=pin_memory)
 
 
@@ -1021,13 +1035,21 @@ def sample_diffusion(cfg, model, data, paths: ExperimentPaths, device, sc_shape,
                 data["SC"][sp] = gaussian_resample(data["SC"][sp], seed=cfg.seed)
             data["_sc_resampled"] = True
 
+    y = data["target"][data_split]
+    mask = _prediction_mask(y, split=data_split)
+    x0 = latents[f"{data_split}_x0"][mask]
+    xt = latents[f"{data_split}_xt"][mask]
+    sc = data["SC"][data_split][mask]
+    cov = data["Cov"][data_split][mask]
+    y_masked = y[mask]
+
     if cfg.model_type == "graph":
         dataset = FC_SCGraphDataset(
-            latents[f"{data_split}_x0"],
-            data["SC"][data_split],
-            latents[f"{data_split}_xt"],
-            data["Cov"][data_split],
-            data["target"][data_split],
+            x0,
+            sc,
+            xt,
+            cov,
+            y_masked,
             age_dim=126,
             transform_sc= (not cfg.use_resample),
             shape=sc_shape,
@@ -1042,11 +1064,11 @@ def sample_diffusion(cfg, model, data, paths: ExperimentPaths, device, sc_shape,
         )
     else:
         dataset = FC_SC_vec_Dataset(
-            latents[f"{data_split}_x0"],
-            data["SC"][data_split],
-            latents[f"{data_split}_xt"],
-            data["Cov"][data_split],
-            data["target"][data_split],
+            x0,
+            sc,
+            xt,
+            cov,
+            y_masked,
             age_dim=126,
             transform_sc= (not cfg.use_resample),
             shape=sc_shape,
@@ -1163,6 +1185,7 @@ def finetune_diffusion(
         corr_ker=(predictor_type == "corr"),
     )
     print(f'Data keys before changing {data.keys()}')
+    data["target_real"] = {sp: data["target"][sp].clone() for sp in ["train", "val", "test"]}
     # Optionally replace targets with predictor outputs from FC20
     if fc20_sets is None:
         print("No FC20 sets provided; using original targets for finetuning.")
@@ -1254,6 +1277,7 @@ def finetune_diffusion(
         evaluate_baseline=cfg.finetune.evaluate_baseline,
         debug=cfg.finetune.debug_lora_grads,
         target_norm=target_norm,
+        use_fc20_as_target=bool(lora_cfg.get("use_fc20_as_target", False)),
         store_path=str(
             paths.finetuned_models
             / f"{cfg.finetune.run_name}_finetuned_{cfg.model_type}_{predictor_type}_{paths.time_tag}.pt"

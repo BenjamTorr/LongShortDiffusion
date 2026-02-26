@@ -1072,6 +1072,7 @@ class ddpm(nn.Module):
         debug=False,
         store_path="fine_tuning/models/feature.pt",
         target_norm: dict | None = None,
+        use_fc20_as_target: bool = False,
     ):
         
         # Extract everything before .pt or .pth (no extension)
@@ -1111,6 +1112,39 @@ class ddpm(nn.Module):
             raise ValueError("target_norm must be provided with keys 'mean' and 'std'.")
         y_mean = target_norm["mean"].to(self.device)
         y_std = target_norm["std"].to(self.device)
+
+        val_real_targets_all = getattr(loader_val.dataset, "real_target", None)
+        val_real_fc20_all = getattr(loader_val.dataset, "real_fc20", None)
+        track_real_metrics = bool(use_fc20_as_target and val_real_targets_all is not None)
+        track_frob_fc20 = bool(val_real_fc20_all is not None)
+
+        def _corr_init():
+            return {"count": 0, "sum_x": 0.0, "sum_y": 0.0, "sum_x2": 0.0, "sum_y2": 0.0, "sum_xy": 0.0}
+
+        def _corr_update(state, pred, targ):
+            pred_flat = pred.detach().reshape(-1).double().cpu()
+            targ_flat = targ.detach().reshape(-1).double().cpu()
+            finite_mask = torch.isfinite(pred_flat) & torch.isfinite(targ_flat)
+            if not finite_mask.any():
+                return
+            pred_flat = pred_flat[finite_mask]
+            targ_flat = targ_flat[finite_mask]
+            state["count"] += pred_flat.numel()
+            state["sum_x"] += pred_flat.sum().item()
+            state["sum_y"] += targ_flat.sum().item()
+            state["sum_x2"] += (pred_flat * pred_flat).sum().item()
+            state["sum_y2"] += (targ_flat * targ_flat).sum().item()
+            state["sum_xy"] += (pred_flat * targ_flat).sum().item()
+
+        def _corr_finalize(state):
+            count = state["count"]
+            if count <= 1:
+                return float("nan")
+            corr_num = (count * state["sum_xy"]) - (state["sum_x"] * state["sum_y"])
+            corr_den_x = (count * state["sum_x2"]) - (state["sum_x"] * state["sum_x"])
+            corr_den_y = (count * state["sum_y2"]) - (state["sum_y"] * state["sum_y"])
+            corr_den = math.sqrt(max(corr_den_x, 0.0) * max(corr_den_y, 0.0))
+            return corr_num / corr_den if corr_den > 1e-12 else float("nan")
 
         
         best_loss, best_step = float("inf"), 0
@@ -1168,6 +1202,9 @@ class ddpm(nn.Module):
 
             self.network.eval()
             baseline_loss, baseline_feat_loss_norm, baseline_feat_loss_raw = 0.0, 0.0, 0.0
+            baseline_real_sse = 0.0
+            baseline_real_count = 0
+            val_cursor = 0
             
             with torch.no_grad():
                 for step, batch in enumerate(tqdm(loader_val, desc="Baseline eval", colour="#ffaa00", leave=False)):
@@ -1254,6 +1291,14 @@ class ddpm(nn.Module):
                         feat_pred_norm = (feat_pred - y_mean) / y_std
                         feat_loss_norm = mse(target_z, feat_pred_norm)
                         feat_loss_raw = mse(target, feat_pred)
+                        if track_real_metrics:
+                            real_target = val_real_targets_all[val_cursor: val_cursor + n].to(self.device).float().reshape_as(target)
+                            real_mask = torch.isfinite(real_target) & torch.isfinite(feat_pred)
+                            if real_mask.any():
+                                diff = feat_pred[real_mask] - real_target[real_mask]
+                                baseline_real_sse += torch.sum(diff * diff).item()
+                                baseline_real_count += int(real_mask.sum().item())
+                        val_cursor += n
 
 
                         chk("x_decoded", x_decoded)
@@ -1269,8 +1314,15 @@ class ddpm(nn.Module):
             print(
                 f"✅ Baseline total loss (norm): {baseline_loss:.6f}, "
                 f"feature loss norm: {baseline_feat_loss_norm:.6f}, "
-                f"feature loss raw: {baseline_feat_loss_raw:.6f}\n"
+                f"feature loss raw: {baseline_feat_loss_raw:.6f}"
             )
+            if track_real_metrics:
+                baseline_feat_loss_raw_real = (
+                    baseline_real_sse / baseline_real_count if baseline_real_count > 0 else float("nan")
+                )
+                print(f"✅ Baseline feature loss raw (real y): {baseline_feat_loss_raw_real:.6f}\n")
+            else:
+                print()
 
         # Restore LoRA weights
         for param, saved_data in lora_params:
@@ -1286,6 +1338,26 @@ class ddpm(nn.Module):
         ax.set_xlabel("Steps")
         ax.set_ylabel("Loss")
         ax.set_title("Training Loss over Epochs")
+        fig_mse, ax_mse = plt.subplots()
+        ax_mse.set_xlabel("Steps")
+        ax_mse.set_ylabel("MSE")
+        ax_mse.set_title("Validation MSE (pred vs target)")
+        fig_corr, ax_corr = plt.subplots()
+        ax_corr.set_xlabel("Steps")
+        ax_corr.set_ylabel("Pearson r")
+        ax_corr.set_title("Validation Correlation (pred vs target)")
+        fig_mse_real, ax_mse_real = plt.subplots()
+        ax_mse_real.set_xlabel("Steps")
+        ax_mse_real.set_ylabel("MSE")
+        ax_mse_real.set_title("Validation MSE (pred vs real y)")
+        fig_corr_real, ax_corr_real = plt.subplots()
+        ax_corr_real.set_xlabel("Steps")
+        ax_corr_real.set_ylabel("Pearson r")
+        ax_corr_real.set_title("Validation Correlation (pred vs real y)")
+        fig_frob, ax_frob = plt.subplots()
+        ax_frob.set_xlabel("Steps")
+        ax_frob.set_ylabel("Frobenius norm")
+        ax_frob.set_title("Validation FC20 Divergence (generated vs real)")
 
         best_loss = float("inf")
         step_count = 0
@@ -1294,6 +1366,9 @@ class ddpm(nn.Module):
         best_loss_raw = 0.0
         val_mse_curve = []
         val_corr_curve = []
+        val_mse_real_curve = []
+        val_corr_real_curve = []
+        val_frob_curve = []
         for epoch in tqdm(range(n_epochs), desc="Training progress", colour="#00ff00"):
             self.network.train()
             if debug:
@@ -1463,12 +1538,12 @@ class ddpm(nn.Module):
                         # ======================================================
                         self.network.eval()
                         val_loss, val_feat_loss, val_feat_loss_raw = 0.0, 0.0, 0.0
-                        corr_count = 0
-                        corr_sum_x = 0.0
-                        corr_sum_y = 0.0
-                        corr_sum_x2 = 0.0
-                        corr_sum_y2 = 0.0
-                        corr_sum_xy = 0.0
+                        val_real_sse = 0.0
+                        val_real_count = 0
+                        val_frob = 0.0
+                        corr_state = _corr_init()
+                        corr_state_real = _corr_init() if track_real_metrics else None
+                        val_cursor = 0
 
                         with torch.no_grad():
                             for vstep, batch in enumerate(tqdm(loader_val, leave=False, desc="Validation", colour="#005500")):
@@ -1528,27 +1603,36 @@ class ddpm(nn.Module):
                                     feat_pred_norm = (feat_pred - y_mean) / y_std
                                     loss_feat_norm = mse(target_z, feat_pred_norm)
                                     loss_feat_raw = mse(target, feat_pred)
+                                    if track_real_metrics:
+                                        real_target = val_real_targets_all[val_cursor: val_cursor + n].to(self.device).float().reshape_as(target)
+                                        real_mask = torch.isfinite(real_target) & torch.isfinite(feat_pred)
+                                        if real_mask.any():
+                                            diff = feat_pred[real_mask] - real_target[real_mask]
+                                            val_real_sse += torch.sum(diff * diff).item()
+                                            val_real_count += int(real_mask.sum().item())
+                                    if track_frob_fc20:
+                                        real_fc20 = val_real_fc20_all[val_cursor: val_cursor + n].to(self.device).float()
+                                        gen_fc20 = upper_elements_to_symmetric_matrix_no_chan(
+                                            x_decoded.view(n, m, 1, 4950).mean(dim=1).squeeze(1)
+                                        )
+                                        frob_batch = torch.linalg.norm(gen_fc20 - real_fc20, dim=(1, 2)).mean()
+                                        val_frob += frob_batch.item() * n / len(loader_val.dataset)
+                                    val_cursor += n
 
                                     loss_total = loss_diff + lambd * loss_feat_norm
 
                                     val_loss += loss_total.item() * n / len(loader_val.dataset)
                                     val_feat_loss += loss_feat_norm.item() * n / len(loader_val.dataset)
                                     val_feat_loss_raw += loss_feat_raw.item() * n / len(loader_val.dataset)
+                                    _corr_update(corr_state, feat_pred, target)
+                                    if track_real_metrics:
+                                        _corr_update(corr_state_real, feat_pred, real_target)
 
-                                    pred_flat = feat_pred.detach().reshape(-1).double().cpu()
-                                    target_flat = target.detach().reshape(-1).double().cpu()
-                                    corr_count += pred_flat.numel()
-                                    corr_sum_x += pred_flat.sum().item()
-                                    corr_sum_y += target_flat.sum().item()
-                                    corr_sum_x2 += (pred_flat * pred_flat).sum().item()
-                                    corr_sum_y2 += (target_flat * target_flat).sum().item()
-                                    corr_sum_xy += (pred_flat * target_flat).sum().item()
-
-                        corr_num = (corr_count * corr_sum_xy) - (corr_sum_x * corr_sum_y)
-                        corr_den_x = (corr_count * corr_sum_x2) - (corr_sum_x * corr_sum_x)
-                        corr_den_y = (corr_count * corr_sum_y2) - (corr_sum_y * corr_sum_y)
-                        corr_den = math.sqrt(max(corr_den_x, 0.0) * max(corr_den_y, 0.0))
-                        val_corr = corr_num / corr_den if corr_den > 1e-12 else float("nan")
+                        val_corr = _corr_finalize(corr_state)
+                        val_feat_loss_raw_real = (
+                            val_real_sse / val_real_count if val_real_count > 0 else float("nan")
+                        )
+                        val_corr_real = _corr_finalize(corr_state_real) if track_real_metrics else float("nan")
                         # ======================================================
                         # 🔹 Early stopping & logging
                         # ======================================================
@@ -1575,6 +1659,13 @@ class ddpm(nn.Module):
                             f"Val_feat_raw={val_feat_loss_raw:.4f} | Best_raw={best_loss_raw:.4f} | "
                             f"Val_corr={val_corr:.4f}"
                         )
+                        if track_real_metrics:
+                            print(
+                                f"            Val_feat_raw_real={val_feat_loss_raw_real:.4f} | "
+                                f"Val_corr_real={val_corr_real:.4f}"
+                            )
+                        if track_frob_fc20:
+                            print(f"            Val_frob_fc20_real={val_frob:.4f}")
 
 
                         
@@ -1584,17 +1675,33 @@ class ddpm(nn.Module):
                         val_losses.append(val_loss)
                         val_mse_curve.append(val_feat_loss_raw)
                         val_corr_curve.append(val_corr)
+                        if track_real_metrics:
+                            val_mse_real_curve.append(val_feat_loss_raw_real)
+                            val_corr_real_curve.append(val_corr_real)
+                        if track_frob_fc20:
+                            val_frob_curve.append(val_frob)
                         clear_output(wait=True)
                         ax.clear()
                         ax.plot(losses, label="Train", color="blue")
                         ax.plot(val_losses, label="Val", color="red")
                         ax.legend(loc="upper right")
                         ax_mse.clear()
-                        ax_mse.plot(val_mse_curve, label="Val MSE(pred, y)", color="green")
+                        ax_mse.plot(val_mse_curve, label="Val MSE(pred, target)", color="green")
                         ax_mse.legend(loc="upper right")
                         ax_corr.clear()
-                        ax_corr.plot(val_corr_curve, label="Val Corr(pred, y)", color="purple")
+                        ax_corr.plot(val_corr_curve, label="Val Corr(pred, target)", color="purple")
+                        if track_real_metrics:
+                            ax_mse_real.clear()
+                            ax_mse_real.plot(val_mse_real_curve, label="Val MSE(pred, real y)", color="orange")
+                            ax_mse_real.legend(loc="upper right")
+                            ax_corr_real.clear()
+                            ax_corr_real.plot(val_corr_real_curve, label="Val Corr(pred, real y)", color="teal")
+                            ax_corr_real.legend(loc="lower right")
                         ax_corr.legend(loc="lower right")
+                        ax_frob.clear()
+                        if track_frob_fc20:
+                            ax_frob.plot(val_frob_curve, label="Val mean Frobenius(gen FC20, real FC20)", color="brown")
+                            ax_frob.legend(loc="upper right")
 
 
                         save_plot_path = os.path.join(save_dir, f"l_{model_id}_{current_time}.png")
@@ -1603,6 +1710,13 @@ class ddpm(nn.Module):
                         fig_mse.savefig(save_mse_plot_path, dpi=150, bbox_inches="tight")
                         save_corr_plot_path = os.path.join(save_dir, f"val_corr_{model_id}_{current_time}.png")
                         fig_corr.savefig(save_corr_plot_path, dpi=150, bbox_inches="tight")
+                        if track_real_metrics:
+                            save_mse_real_plot_path = os.path.join(save_dir, f"val_mse_real_{model_id}_{current_time}.png")
+                            fig_mse_real.savefig(save_mse_real_plot_path, dpi=150, bbox_inches="tight")
+                            save_corr_real_plot_path = os.path.join(save_dir, f"val_corr_real_{model_id}_{current_time}.png")
+                            fig_corr_real.savefig(save_corr_real_plot_path, dpi=150, bbox_inches="tight")
+                        save_frob_plot_path = os.path.join(save_dir, f"val_frob_fc20_{model_id}_{current_time}.png")
+                        fig_frob.savefig(save_frob_plot_path, dpi=150, bbox_inches="tight")
                         plt.imsave(os.path.join(save_dir, f"l_{model_id}_{current_time}_gen{step_count}.png"), mat_x_debug.float().numpy(), cmap="RdBu", vmin=-1, vmax=1)
                         step_loss = 0.0
                         step_loss_count = 0

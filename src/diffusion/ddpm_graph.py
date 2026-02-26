@@ -632,6 +632,7 @@ class ddpm_graph(nn.Module):
         evaluate_baseline = True,
         store_path="fine_tuning/models/feature.pt",
         target_norm: dict | None = None,
+        use_fc20_as_target: bool = False,
     ):
         print(f'\nWorking on model saved on {store_path}\n')
         # ==========================================================
