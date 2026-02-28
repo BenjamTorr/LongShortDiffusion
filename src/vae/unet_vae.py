@@ -8,7 +8,6 @@ from IPython.display import display, clear_output
 import torch.nn.functional as F
 import numpy as np
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
-from torch.cuda.amp import autocast, GradScaler
 import random
 
 # Loss function
@@ -607,14 +606,20 @@ class vae_unet(nn.Module):
                                                             min_lr=1e-6)
         else:
             self.scheduler = None
-        scaler = torch.amp.GradScaler('cuda')
+        amp_enabled = device.type == "cuda"
+        amp_dtype = torch.bfloat16
         optim.zero_grad()
         for epoch in tqdm(range(n_epochs), desc=f"Training progress", colour="#00ff00"):
             epoch_loss = 0.0
             self.train()
 
             for step, batch in enumerate(tqdm(loader, leave=False, desc=f"Epoch {epoch + 1}/{n_epochs}", colour="#005500")):
-                with torch.amp.autocast('cuda'):
+                amp_context = (
+                    torch.amp.autocast(device_type="cuda", dtype=amp_dtype)
+                    if amp_enabled
+                    else nullcontext()
+                )
+                with amp_context:
                     x0, _, xt, _ = batch
                     x0 = x0.to(device, non_blocking=True)
                     xt = xt.to(device, non_blocking=True)
@@ -642,11 +647,12 @@ class vae_unet(nn.Module):
                     recon_loss /= 2
                     true_loss = (recon_loss + beta * kl_loss) 
                     loss = (recon_loss + beta * kl_loss) / accumulation_steps
-                scaler.scale(loss).backward()
+                loss.backward()
                 if (step + 1) % accumulation_steps == 0 or (step + 1) == len(loader):
-                    scaler.step(optim)
-                    scaler.update()
-                    optim.zero_grad()
+                    # Clip gradients to prevent explosion
+                    torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=1.0)
+                    optim.step()
+                    optim.zero_grad(set_to_none=True)
                 
                 epoch_loss += true_loss.item() * len(x0) / len(loader.dataset)
 
@@ -655,7 +661,12 @@ class vae_unet(nn.Module):
             epoch_val_loss = 0
             with torch.no_grad():
                 for step, batch in enumerate(tqdm(loader_val, leave=False, desc=f"Validation Epoch {epoch + 1}/{n_epochs}", colour="#005500")):
-                    with torch.amp.autocast('cuda'):
+                    amp_context = (
+                        torch.amp.autocast(device_type="cuda", dtype=amp_dtype)
+                        if amp_enabled
+                        else nullcontext()
+                    )
+                    with amp_context:
                         x0, _, xt, _  = batch
                         x0 = x0.to(device, non_blocking=True)
                         xt = xt.to(device, non_blocking=True)
@@ -679,7 +690,7 @@ class vae_unet(nn.Module):
                 torch.save(self.state_dict(), store_path[:-4] + f"_epoch{epoch}.pth")
 
             # Save best model and reset patience
-            if best_loss > epoch_val_loss:
+            if (best_loss - epoch_val_loss) > 1e-4:
                 best_epoch = epoch + 1
                 best_loss = epoch_val_loss
                 no_improvement_counter = 0
