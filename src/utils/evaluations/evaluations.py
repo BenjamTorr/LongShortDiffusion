@@ -437,7 +437,7 @@ def safe_corrcoef(a, b):
         return 0.0
     return np.corrcoef(a, b)[0, 1]
 
-def compare_regression_methods_shared_truth(y_true, preds_dict, n_bins=30):
+def compare_regression_methods_shared_truth(y_true, preds_dict, n_bins=30, color_map=None):
     """
     Compare multiple regression models visually and numerically, assuming the same y_true.
 
@@ -454,30 +454,74 @@ def compare_regression_methods_shared_truth(y_true, preds_dict, n_bins=30):
         }
     n_bins : int
         Number of bins for histograms.
+    color_map : dict or None
+        Optional mapping {model_name: color_hex}. If None, uses the project plotting
+        defaults for the main series names and a qualitative fallback for others.
     """
-    y_true = np.array(y_true)
+    y_true = np.asarray(y_true).reshape(-1)
+
+    # Keep model order from input dict.
     model_names = list(preds_dict.keys())
     n_models = len(model_names)
+
+    # Normalize predictions to numpy arrays once.
+    preds_np = {name: np.asarray(preds_dict[name]).reshape(-1) for name in model_names}
+
+    # Default palette aligned with notebook plot colors.
+    default_colors = {
+        "Real scans (20 min)": "#3949AB",  # Indigo
+        "Real scans (short)": "#9E9E9E",   # Gray
+        "Conditional DDPM": "#FB8C00",     # Orange
+        "DraftDFC": "#D81B60",             # Magenta
+    }
+    if color_map is None:
+        color_map = default_colors.copy()
+    else:
+        merged = default_colors.copy()
+        merged.update(color_map)
+        color_map = merged
+
+    # Assign fallback colors for any series not in the explicit map.
+    fallback_palette = px.colors.qualitative.Plotly
+    for i, name in enumerate(model_names):
+        if name not in color_map:
+            color_map[name] = fallback_palette[i % len(fallback_palette)]
     
     # ---------- Add baseline ----------
     y_mean = np.mean(y_true)
     baseline_pred = np.full_like(y_true, y_mean)
     #preds_dict = {"Mean baseline": baseline_pred, **preds_dict}
-    model_names = list(preds_dict.keys())
+    model_names = list(preds_np.keys())
     n_models = len(model_names)
 
     # ---------- Metrics ----------
     metrics = {}
-    for name, y_pred in preds_dict.items():
-        y_pred = np.array(y_pred)
+    for name, y_pred in preds_np.items():
         r2 = r2_score(y_true, y_pred)
         corr = safe_corrcoef(y_true, y_pred)
         metrics[name] = {"R2": r2, "Corr": corr}
 
     # ---------- Global axis limits ----------
-    all_pred = np.concatenate(list(preds_dict.values()))
+    all_pred = np.concatenate(list(preds_np.values()))
     min_val = float(min(y_true.min(), all_pred.min()))
     max_val = float(max(y_true.max(), all_pred.max()))
+
+    # Shared residual y-limits across models (symmetric around 0)
+    all_residuals = np.concatenate([pred - y_true for pred in preds_np.values()])
+    if all_residuals.size > 0:
+        max_abs_resid = float(np.max(np.abs(all_residuals)))
+        residual_min, residual_max = -max_abs_resid, max_abs_resid
+    else:
+        residual_min, residual_max = -1.0, 1.0
+
+    # Shared histogram scales (x and y) across models
+    hist_range = (min_val, max_val)
+    max_hist_count = 0
+    for pred in preds_np.values():
+        true_counts, _ = np.histogram(y_true, bins=n_bins, range=hist_range)
+        pred_counts, _ = np.histogram(pred, bins=n_bins, range=hist_range)
+        max_hist_count = max(max_hist_count, int(true_counts.max()), int(pred_counts.max()))
+    hist_ymax = float(max_hist_count) * 1.05 if max_hist_count > 0 else 1.0
 
     # ---------- Subplots layout ----------
     fig = make_subplots(
@@ -491,11 +535,12 @@ def compare_regression_methods_shared_truth(y_true, preds_dict, n_bins=30):
     )
 
     # ---------- Row 1: True vs Predicted ----------
-    for j, (name, y_pred) in enumerate(preds_dict.items(), 1):
+    for j, (name, y_pred) in enumerate(preds_np.items(), 1):
+        model_color = color_map[name]
         fig.add_trace(
             go.Scatter(
                 x=y_true, y=y_pred,
-                mode='markers', marker=dict(size=5, opacity=0.6),
+                mode='markers', marker=dict(size=5, opacity=0.6, color=model_color),
                 name=name, showlegend=False
             ),
             row=1, col=j
@@ -512,12 +557,13 @@ def compare_regression_methods_shared_truth(y_true, preds_dict, n_bins=30):
         fig.update_yaxes(title_text="Predicted", range=[min_val, max_val], row=1, col=j)
 
     # ---------- Row 2: True vs Residuals ----------
-    for j, (name, y_pred) in enumerate(preds_dict.items(), 1):
+    for j, (name, y_pred) in enumerate(preds_np.items(), 1):
+        model_color = color_map[name]
         residuals = y_pred - y_true
         fig.add_trace(
             go.Scatter(
                 x=y_true, y=residuals,
-                mode='markers', marker=dict(size=5, opacity=0.6),
+                mode='markers', marker=dict(size=5, opacity=0.6, color=model_color),
                 showlegend=False
             ),
             row=2, col=j
@@ -531,20 +577,35 @@ def compare_regression_methods_shared_truth(y_true, preds_dict, n_bins=30):
             row=2, col=j
         )
         fig.update_xaxes(title_text="True", range=[min_val, max_val], row=2, col=j)
-        fig.update_yaxes(title_text="Residuals", row=2, col=j)
+        fig.update_yaxes(title_text="Residuals", range=[residual_min, residual_max], row=2, col=j)
 
     # ---------- Row 3: Histogram comparison ----------
-    for j, (name, y_pred) in enumerate(preds_dict.items(), 1):
+    for j, (name, y_pred) in enumerate(preds_np.items(), 1):
+        model_color = color_map[name]
         fig.add_trace(
-            go.Histogram(x=y_true, nbinsx=n_bins, name=f"{name} True", opacity=0.5),
+            go.Histogram(
+                x=y_true,
+                nbinsx=n_bins,
+                name=f"{name} True",
+                opacity=0.35,
+                marker_color="#BDBDBD",
+                xbins=dict(start=min_val, end=max_val, size=(max_val - min_val) / n_bins if max_val > min_val else 1),
+            ),
             row=3, col=j
         )
         fig.add_trace(
-            go.Histogram(x=y_pred, nbinsx=n_bins, name=f"{name} Pred", opacity=0.5),
+            go.Histogram(
+                x=y_pred,
+                nbinsx=n_bins,
+                name=f"{name} Pred",
+                opacity=0.5,
+                marker_color=model_color,
+                xbins=dict(start=min_val, end=max_val, size=(max_val - min_val) / n_bins if max_val > min_val else 1),
+            ),
             row=3, col=j
         )
-        fig.update_xaxes(title_text="Value", row=3, col=j)
-        fig.update_yaxes(title_text="Count", row=3, col=j)
+        fig.update_xaxes(title_text="Value", range=[min_val, max_val], row=3, col=j)
+        fig.update_yaxes(title_text="Count", range=[0, hist_ymax], row=3, col=j)
 
     fig.update_layout(
         height=1000, width=350 * n_models,
@@ -558,11 +619,14 @@ def compare_regression_methods_shared_truth(y_true, preds_dict, n_bins=30):
     bar_fig = go.Figure()
 
     for model in model_names:
-        bar_fig.add_trace(go.Bar(
-            x=["R²", "Correlation"],
-            y=[metrics[model]["R2"], metrics[model]["Corr"]],
-            name=model
-        ))
+        bar_fig.add_trace(
+            go.Bar(
+                x=["R²", "Correlation"],
+                y=[metrics[model]["R2"], metrics[model]["Corr"]],
+                name=model,
+                marker_color=color_map[model],
+            )
+        )
 
     bar_fig.update_layout(
         title="R² and Correlation (Shared Ground Truth)",
