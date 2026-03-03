@@ -56,6 +56,12 @@ def load_previous_config(prev_root: Path):
         cfg.time_tag = f"{cfg.time_short}min"
     if not hasattr(cfg, "metadata_path"):
         cfg.metadata_path = "../config/metadata.yaml"
+    if not hasattr(cfg, "use_sc"):
+        cfg.use_sc = True
+    if not hasattr(cfg, "use_fct"):
+        cfg.use_fct = True
+    if not hasattr(cfg, "use_cov"):
+        cfg.use_cov = True
     if hasattr(cfg, "finetune"):
         if not hasattr(cfg.finetune, "use_scheduler"):
             cfg.finetune.use_scheduler = True
@@ -187,6 +193,45 @@ def main():
     parser.add_argument("--ridge-grid-min-exp", type=float, default=-2.0, help="Ridge grid min exponent for 10**x.")
     parser.add_argument("--ridge-grid-max-exp", type=float, default=5.0, help="Ridge grid max exponent for 10**x.")
     parser.add_argument("--ridge-grid-steps", type=int, default=100, help="Number of ridge-grid points.")
+    parser.add_argument(
+        "--use-fc-short",
+        dest="use_fct",
+        action="store_true",
+        default=None,
+        help="Override: include FC-short (x_t) conditioning. Add --no-fc-short to remove it for ablation.",
+    )
+    parser.add_argument(
+        "--no-fc-short",
+        dest="use_fct",
+        action="store_false",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--use-sc",
+        dest="use_sc",
+        action="store_true",
+        default=None,
+        help="Override: include SC conditioning. Add --no-sc to remove it for ablation.",
+    )
+    parser.add_argument(
+        "--no-sc",
+        dest="use_sc",
+        action="store_false",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--use-covariates",
+        dest="use_cov",
+        action="store_true",
+        default=None,
+        help="Override: include covariates conditioning. Add --no-covariates to remove it for ablation.",
+    )
+    parser.add_argument(
+        "--no-covariates",
+        dest="use_cov",
+        action="store_false",
+        help=argparse.SUPPRESS,
+    )
     args = parser.parse_args()
 
     prev_root = Path(args.prev_run).expanduser().resolve()
@@ -204,6 +249,12 @@ def main():
             cfg.finetune.evaluate_baseline = args.finetune_eval_baseline
         if args.finetune_debug_lora_grads is not None:
             cfg.finetune.debug_lora_grads = args.finetune_debug_lora_grads
+    if args.use_fct is not None:
+        cfg.use_fct = args.use_fct
+    if args.use_sc is not None:
+        cfg.use_sc = args.use_sc
+    if args.use_cov is not None:
+        cfg.use_cov = args.use_cov
     cfg.ridge.ridge_grid = [
         float(x)
         for x in torch.logspace(args.ridge_grid_min_exp, args.ridge_grid_max_exp, steps=args.ridge_grid_steps)
@@ -248,6 +299,7 @@ def main():
     print(f"\nNew run root: {paths_new.root}")
     print(f"Using VAE checkpoint from previous run: {vae_ckpt}")
     print(f"Metadata source: {cfg.metadata_path}")
+    print(f"Conditioning ablation: use_fct={cfg.use_fct}, use_sc={cfg.use_sc}, use_cov={cfg.use_cov}")
     if hasattr(cfg, "finetune"):
         print(f"LoRA run_name: {cfg.finetune.run_name}")
 
